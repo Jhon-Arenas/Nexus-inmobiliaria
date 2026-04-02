@@ -18,6 +18,7 @@ def inicializar_db():
             telefono TEXT,
             telegram_user TEXT,
             interes TEXT,
+            presupuesto INTEGER,
             codigo_seguridad TEXT,
             id_vendedor INTEGER
         )
@@ -47,6 +48,7 @@ if rol == "Cliente (Registro)":
         telefono_cli = st.text_input("Tu WhatsApp (Ej: +584241234567)")
         user_tg = st.text_input("Tu usuario de Telegram (Ej: @tu_usuario)")
         interes_cli = st.selectbox("¿Qué buscas?", ["Casa", "Apartamento", "Local", "Terreno"])
+        presupuesto_cli = st.slider("¿Cuál es tu presupuesto aproximado en USD?", min_value=3000, max_value=500000, step=1000, format="$%d")
         btn_enviar = st.form_submit_button("Solicitar Información")
     
     if btn_enviar:
@@ -54,9 +56,11 @@ if rol == "Cliente (Registro)":
             ref_segura = f"REF-{secrets.token_hex(3).upper()}"
             conn = conectar()
             cursor = conn.cursor()
+            # Agregamos 'presupuesto' a la lista de columnas y el '?' correspondiente
             cursor.execute("""
-                INSERT INTO prospectos (nombre, telefono, telegram_user, interes, codigo_seguridad, id_vendedor) 
-                VALUES (?, ?, ?, ?, ?, ?)""", (nombre_cli, telefono_cli, user_tg, interes_cli, ref_segura, 1))
+                INSERT INTO prospectos (nombre, telefono, telegram_user, interes, presupuesto, codigo_seguridad, id_vendedor) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)""", 
+                (nombre_cli, telefono_cli, user_tg, interes_cli, presupuesto_cli, ref_segura, 1))
             conn.commit()
             conn.close()
             st.success(f"¡Registrado! Tu código de seguridad es: **{ref_segura}**")
@@ -72,20 +76,36 @@ elif rol == "Vendedor (Gestión)":
     if clave_vendedor == "Ventas2026":
         st.title("👨‍💼 Gestión de Prospectos")
         conn = conectar()
-        df_leads = pd.read_sql_query("SELECT * FROM prospectos", conn)
+        df_leads = pd.read_sql_query("SELECT * FROM prospectos ORDER BY id DESC", conn)
         conn.close()
 
         if not df_leads.empty:
+            cantidad = len(df_leads)
+            st.toast(f"🔔 Tienes {cantidad} prospectos esperando atención", icon="🏠")
+            
+            # Ordenar por los más nuevos (opcional pero recomendado)
+            df_leads = df_leads.sort_values(by="id", ascending=False)
+
             for index, row in df_leads.iterrows():
-                with st.expander(f"Lead: {row['nombre']} - {row['interes']}"):
-                    st.write(f"**Código de Validación:** {row['codigo_seguridad']}")
+                # --- LÓGICA VIP ---
+                etiqueta_vip = ""
+                # Si el presupuesto es mayor o igual a 100,000 USD
+                if row['presupuesto'] >= 100000:
+                    etiqueta_vip = "⭐ [CLIENTE VIP]"
+                elif row['presupuesto'] >= 50000:
+                    etiqueta_vip = "💰 [ALTO INTERÉS]"
+
+                # El título del expander ahora cambia según el presupuesto
+                with st.expander(f"{etiqueta_vip} Nombre: {row['nombre']} - ${row['presupuesto']:,} USD"):
+                    st.write(f"**Interés:** {row['interes']}")
+                    st.write(f"**Código de Validación:** :blue[{row['codigo_seguridad']}]")
                     
                     # Lógica de enlaces
                     tg_clean = row['telegram_user'].replace("@", "")
                     link_tg = f"https://t.me/{tg_clean}"
                     
                     # WhatsApp con mensaje automático
-                    msj = f"Hola {row['nombre']}, soy tu asesor de Nexus. Mi código es {row['codigo_seguridad']}."
+                    msj = f"Hola *{row['nombre']}*, soy tu asesor de *Inmobiliaria Nexus*. Mi código de validación es: *{row['codigo_seguridad']}*. ¿En qué puedo ayudarte hoy?"
                     link_ws = f"https://wa.me/{row['telefono']}?text={msj.replace(' ', '%20')}"
 
                     st.warning(f"Copia el código **{row['codigo_seguridad']}** antes de contactar.")
